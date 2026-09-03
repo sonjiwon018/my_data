@@ -11,30 +11,33 @@ st.set_page_config(
 # 제목
 st.title("🌡️ 서울의 100년 기온 변화")
 st.write(
-    "서울의 일별 평균기온 데이터를 이용하여 "
-    "연도별 평균기온의 변화를 살펴봅니다."
+    "서울의 기상 데이터를 이용하여 "
+    "100년 동안 연평균 기온이 어떻게 변해 왔는지 살펴봅니다."
 )
 
 # 데이터 주소
 DATA_URL = "https://raw.githubusercontent.com/greatsong/modudata/main/data/seoul.csv"
 
 
+# --------------------------------
 # 데이터 불러오기
+# --------------------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv(DATA_URL, encoding="utf-8-sig")
 
     # 날짜 변환
-    df["날짜"] = pd.to_datetime(df["날짜"], errors="coerce")
-
-    # 평균기온 숫자 변환
-    df["평균기온"] = pd.to_numeric(
-        df["평균기온"],
+    df["날짜"] = pd.to_datetime(
+        df["날짜"],
         errors="coerce"
     )
 
-    # 결측값 제거
-    df = df.dropna(subset=["날짜", "평균기온"])
+    # 기온 데이터 숫자로 변환
+    for column in ["평균기온", "최저기온", "최고기온"]:
+        df[column] = pd.to_numeric(
+            df[column],
+            errors="coerce"
+        )
 
     return df
 
@@ -47,32 +50,32 @@ try:
     # --------------------------------
     st.subheader("📊 원본 데이터 요약통계")
 
-    summary = df["평균기온"].describe()
+    summary = df[
+        ["평균기온", "최저기온", "최고기온"]
+    ].describe().T
 
     summary_table = pd.DataFrame({
-        "통계": [
-            "개수",
-            "평균",
-            "표준편차",
-            "최소값",
-            "25%",
-            "중앙값",
-            "75%",
-            "최대값"
-        ],
-        "평균기온 (℃)": [
-            summary["count"],
-            summary["mean"],
-            summary["std"],
-            summary["min"],
-            summary["25%"],
-            summary["50%"],
-            summary["75%"],
-            summary["max"]
-        ]
+        "항목": ["평균기온", "최저기온", "최고기온"],
+        "개수": summary["count"],
+        "평균": summary["mean"],
+        "표준편차": summary["std"],
+        "최소값": summary["min"],
+        "25%": summary["25%"],
+        "중앙값": summary["50%"],
+        "75%": summary["75%"],
+        "최대값": summary["max"]
     })
 
-    summary_table["평균기온 (℃)"] = summary_table["평균기온 (℃)"].round(2)
+    # 소수점 둘째 자리까지 표시
+    numeric_columns = [
+        "개수", "평균", "표준편차",
+        "최소값", "25%", "중앙값",
+        "75%", "최대값"
+    ]
+
+    summary_table[numeric_columns] = (
+        summary_table[numeric_columns].round(2)
+    )
 
     st.dataframe(
         summary_table,
@@ -81,32 +84,36 @@ try:
     )
 
     st.caption(
-        "※ 요약통계는 원본 데이터의 일별 평균기온을 기준으로 계산했습니다."
+        "※ 원본 데이터의 평균기온·최저기온·최고기온을 기준으로 계산한 요약통계입니다."
     )
 
     # --------------------------------
-    # 2. 연도별 평균기온 계산
+    # 2. 연도 추출
     # --------------------------------
     df["연도"] = df["날짜"].dt.year
 
+    # --------------------------------
+    # 3. 연도별 평균기온 계산
+    # --------------------------------
     yearly_temp = (
-        df.groupby("연도")["평균기온"]
+        df.dropna(subset=["날짜", "평균기온"])
+        .groupby("연도")["평균기온"]
         .mean()
         .sort_index()
     )
 
-    # 실제 데이터가 있는 가장 최근 연도
+    # 가장 최근 연도
     latest_year = yearly_temp.index.max()
 
     # 최근 100년
     start_year = latest_year - 99
 
-    # 100년 범위 생성
+    # 100년의 모든 연도 생성
     all_years = pd.DataFrame({
         "연도": range(start_year, latest_year + 1)
     })
 
-    # 데이터가 없는 연도는 NaN으로 남김
+    # 실제 데이터가 없는 연도는 NaN으로 남김
     chart_data = all_years.merge(
         yearly_temp.reset_index(),
         on="연도",
@@ -116,15 +123,14 @@ try:
     chart_data = chart_data.set_index("연도")
 
     # --------------------------------
-    # 3. 연평균 기온 그래프
+    # 4. 연평균 기온 그래프
     # --------------------------------
     st.subheader(
         f"📈 서울 연평균 기온 변화 ({start_year}~{latest_year})"
     )
 
     st.info(
-        "실제 관측 자료가 존재하지 않는 연도는 "
-        "그래프의 선을 연결하지 않고 끊어서 표시합니다."
+        "관측 데이터가 없는 연도는 선으로 연결하지 않고 끊어서 표시합니다."
     )
 
     st.line_chart(
@@ -134,7 +140,7 @@ try:
     )
 
     # --------------------------------
-    # 4. 시작 연도와 최근 연도 비교
+    # 5. 첫 연도와 최근 연도 비교
     # --------------------------------
     valid_data = chart_data["평균기온"].dropna()
 
@@ -169,21 +175,35 @@ try:
         )
 
     # --------------------------------
-    # 5. 연도별 데이터
+    # 6. 원본 데이터 전체 보기
     # --------------------------------
-    with st.expander("📋 연도별 평균기온 데이터 보기"):
+    st.subheader("📋 원본 데이터")
 
-        display_data = chart_data.reset_index().copy()
+    # 화면에 표시할 열
+    display_columns = [
+        "날짜",
+        "지점",
+        "평균기온",
+        "최저기온",
+        "최고기온"
+    ]
 
-        display_data["평균기온"] = (
-            display_data["평균기온"].round(1)
-        )
+    display_data = df[display_columns].copy()
 
-        st.dataframe(
-            display_data,
-            use_container_width=True,
-            hide_index=True
-        )
+    # 날짜를 보기 좋게 표시
+    display_data["날짜"] = display_data["날짜"].dt.strftime(
+        "%Y-%m-%d"
+    )
+
+    # 기온 소수점 한 자리
+    for column in ["평균기온", "최저기온", "최고기온"]:
+        display_data[column] = display_data[column].round(1)
+
+    st.dataframe(
+        display_data,
+        use_container_width=True,
+        hide_index=True
+    )
 
     # 데이터 출처
     st.caption(
